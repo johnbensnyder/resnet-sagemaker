@@ -66,6 +66,8 @@ def parse_args():
                          darknet53, hrnet_w18c, hrnet_w32c""")
     cmdline.add_argument('--resume_from', 
                          help='Path to SavedModel format model directory from which to resume training')
+    cmdline.add_argument('--pipe_mode', default='False',
+                         help='Path to SavedModel format model directory from which to resume training')
     return cmdline
 
 
@@ -175,8 +177,10 @@ def main(FLAGS):
     # barrier
     _ = dist.allreduce(tf.constant(0))
  
-    train_data = create_dataset(FLAGS.train_data_dir, batch_size_per_device, preprocessing=preprocessing_type)
-    validation_data = create_dataset(FLAGS.validation_data_dir, batch_size_per_device, preprocessing=preprocessing_type, train=False)
+    train_data = create_dataset(FLAGS.train_data_dir, batch_size_per_device, 
+                                preprocessing=preprocessing_type, pipe_mode=FLAGS.pipe_mode)
+    validation_data = create_dataset(FLAGS.validation_data_dir, batch_size_per_device, 
+                                     preprocessing=preprocessing_type, train=False, pipe_mode=FLAGS.pipe_mode)
     
     trainer = Trainer(model, opt, loss_func, scheduler, logging=logger, fp16=FLAGS.fp16, mixup_alpha=FLAGS.mixup_alpha, model_dir=FLAGS.model_dir)
     
@@ -198,4 +202,5 @@ if __name__ == '__main__':
     FLAGS.fp16 = literal_eval(FLAGS.fp16)
     FLAGS.xla = literal_eval(FLAGS.xla)
     FLAGS.tf32 = literal_eval(FLAGS.tf32)
+    FLAGS.pipe_mode = literal_eval(FLAGS.pipe_mode)
     main(FLAGS)

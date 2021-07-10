@@ -1,15 +1,24 @@
 import os
 import tensorflow as tf
 from preprocessing import resnet_preprocessing, imagenet_preprocessing, darknet_preprocessing
-from utils.dist_utils import is_sm_dist
+from utils.dist_utils import is_sm_dist, is_sm
 if is_sm_dist():
     import smdistributed.dataparallel.tensorflow as dist
 else:
     import horovod.tensorflow as dist
 
-def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True):
-    filenames = [os.path.join(data_dir, i) for i in os.listdir(data_dir)]
-    data = tf.data.TFRecordDataset(filenames).shard(dist.size(), dist.rank())
+def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True, pipe_mode=False):
+    if pipe_mode:
+        from sagemaker_tensorflow import PipeModeDataset
+        data = PipeModeDataset(channel=data_dir.split('/')[-1], record_format='TFRecord').shard(dist.size(), dist.rank())
+    elif data_dir.startswith('s3://'):
+        from s3fs import S3FileSystem
+        fs = S3FileSystem()
+        filenames = [os.path.join('s3://', i) for i in fs.ls(data_dir)]
+        data = tf.data.TFRecordDataset(filenames).shard(dist.size(), dist.rank())
+    else:
+        filenames = [os.path.join(data_dir, i) for i in os.listdir(data_dir)]
+        data = tf.data.TFRecordDataset(filenames).shard(dist.size(), dist.rank())
     parse_fn = lambda record: parse(record, train, preprocessing)
     data = data.shuffle(buffer_size=1000)
     data = data.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)

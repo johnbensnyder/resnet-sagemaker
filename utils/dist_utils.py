@@ -1,6 +1,12 @@
 import os
 from ast import literal_eval
 
+def is_sm():
+    sm_training_env = os.environ.get('SM_TRAINING_ENV', None)
+    if isinstance(sm_training_env, dict):
+        return True
+    return False
+
 def is_sm_dist():
     """Check if environment variables are set for Sagemaker Data Distributed
     """
