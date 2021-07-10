@@ -1,19 +1,18 @@
-import horovod.tensorflow as hvd
 import os
 import tensorflow as tf
 from preprocessing import resnet_preprocessing, imagenet_preprocessing, darknet_preprocessing
-import functools
+from utils.dist_utils import is_sm_dist
+if is_sm_dist():
+    import smdistributed.dataparallel.tensorflow as dist
+else:
+    import horovod.tensorflow as dist
 
-def create_dataset(data_dir, batch_size, preprocessing='resnet', validation=False):
+def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True):
     filenames = [os.path.join(data_dir, i) for i in os.listdir(data_dir)]
-    data = tf.data.TFRecordDataset(filenames).shard(hvd.size(), hvd.rank())
-    if not validation:
-        parse_fn = functools.partial(parse_train, preprocessing=preprocessing)
-        data = data.shuffle(buffer_size=1000)
-        data = data.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    else:
-        parse_fn = functools.partial(parse_validation, preprocessing=preprocessing)
-        data = data.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    data = tf.data.TFRecordDataset(filenames).shard(dist.size(), dist.rank())
+    parse_fn = lambda record: parse(record, train, preprocessing)
+    data = data.shuffle(buffer_size=1000)
+    data = data.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     # we drop remainder because we want same sized batches - XLA and because of allreduce being used to calculate
     # accuracy - validation accuracy may be slightly different than computing on all of validation data
     data = data.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
