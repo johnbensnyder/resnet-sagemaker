@@ -19,11 +19,11 @@ mpirun --allow-run-as-root --tag-output --mca plm_rsh_no_tree_spawn 1 \
     --batch_size 2048 \
     --num_epochs 120 \
     --model_dir ~/model \
-    --learning_rate 0.1 \
+    --learning_rate 0.16 \
     --momentum 0.9 \
     --label_smoothing 0.1 \
     --mixup_alpha 0.2 \
-    --l2_weight_decay 2.5e-5 \
+    --l2_weight_decay 1e-5 \
     --fp16 True \
     --xla True \
     --tf32 True \

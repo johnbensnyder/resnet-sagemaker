@@ -31,8 +31,9 @@ class Trainer(object):
     def train_step(self, images, labels, first_batch=False):
         batch_size = tf.shape(images)[0]
         images, labels = mixup(batch_size, self.mixup_alpha, images, labels)
+        images = tf.cast(images, tf.float16 if self.fp16 else tf.float32)
         with tf.GradientTape() as tape:
-            logits = self.model(images, training=True)
+            logits = tf.cast(self.model(images, training=True), tf.float32)
             loss_value = self.loss_func(labels, logits)
             loss_value += tf.add_n(self.model.losses)
             if self.fp16:
@@ -55,9 +56,10 @@ class Trainer(object):
     
     @tf.function
     def validation_step(self, images, labels):
-        pred = self.model(images, training=False)
-        loss = self.loss_func(labels, pred)
-        top_1_pred = tf.squeeze(tf.math.top_k(pred, k=1)[1])
+        images = tf.cast(images, tf.float16 if self.fp16 else tf.float32)
+        logits = tf.cast(self.model(images, training=False), tf.float32)
+        loss = self.loss_func(labels, logits)
+        top_1_pred = tf.squeeze(tf.math.top_k(logits, k=1)[1])
         sparse_labels = tf.cast(tf.math.argmax(labels, axis=1), tf.int32)
         top_1_accuracy = tf.math.reduce_sum(tf.cast(tf.equal(top_1_pred, sparse_labels), tf.int32))
         return loss, top_1_accuracy

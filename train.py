@@ -77,12 +77,17 @@ def main(FLAGS):
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
     if gpus:
-        tf.config.experimental.set_visible_devices(gpus[dist.local_rank()], 'GPU')
-    tf.config.threading.intra_op_parallelism_threads = 1 # Avoid pool of Eigen threads
+        device = gpus[dist.local_rank()]
+        tf.config.experimental.set_visible_devices(device, 'GPU')
+    else:
+        device = None
+    # tf.config.threading.intra_op_parallelism_threads = 1 # Avoid pool of Eigen threads
     tf.config.threading.inter_op_parallelism_threads = max(2, cpu_count()//dist.local_size()-2)
     tf.config.optimizer.set_jit(FLAGS.xla)
-    tf.config.optimizer.set_experimental_options({"auto_mixed_precision": FLAGS.fp16})
-    tf.config.experimental.enable_tensor_float_32_execution(FLAGS.tf32)
+    # tf.config.optimizer.set_experimental_options({"auto_mixed_precision": FLAGS.fp16})
+    # tf.config.experimental.enable_tensor_float_32_execution(FLAGS.tf32)
+    policy = tf.keras.mixed_precision.Policy('mixed_float16' if FLAGS.fp16 else 'float32')
+    tf.keras.mixed_precision.set_global_policy(policy)
 
     preprocessing_type = 'resnet'
     if FLAGS.model == 'resnet50v1_b':
@@ -118,7 +123,7 @@ def main(FLAGS):
     else:
         raise NotImplementedError('Model {} not implemented'.format(FLAGS.model))
 
-    model.summary()
+    # model.summary()
     steps_per_epoch = FLAGS.train_dataset_size // FLAGS.batch_size
     iterations = steps_per_epoch * FLAGS.num_epochs
     batch_size_per_device = FLAGS.batch_size//dist.size()
@@ -141,7 +146,7 @@ def main(FLAGS):
                     values=[FLAGS.learning_rate, FLAGS.learning_rate * 0.1, FLAGS.learning_rate * 0.01, FLAGS.learning_rate * 0.001])
     elif FLAGS.schedule == 'cosine':
         scheduler = tf.keras.experimental.CosineDecayRestarts(initial_learning_rate=FLAGS.learning_rate,
-                    first_decay_steps=iterations, t_mul=1, m_mul=1)
+                    first_decay_steps=iterations, t_mul=1, m_mul=1, alpha=1e-3)
     else:
         print('No schedule specified')
 
@@ -153,9 +158,15 @@ def main(FLAGS):
     opt = MomentumOptimizer(learning_rate=scheduler, momentum=FLAGS.momentum, nesterov=True) 
 
     if FLAGS.fp16:
-        opt = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt, loss_scale=128.)
-
-    loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True, label_smoothing=FLAGS.label_smoothing, reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE) 
+        # opt = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt, loss_scale=128.)
+        opt = tf.keras.mixed_precision.LossScaleOptimizer(opt, dynamic=False, 
+                                                          initial_scale=128., 
+                                                          dynamic_growth_steps=None)
+    
+    # FLAGS.label_smoothing = tf.cast(FLAGS.label_smoothing, tf.float16 if FLAGS.fp16 else tf.float32)
+    loss_func = tf.keras.losses.CategoricalCrossentropy(from_logits=True, 
+                                                        label_smoothing=FLAGS.label_smoothing,
+                                                        reduction=tf.keras.losses.Reduction.SUM_OVER_BATCH_SIZE) 
 
     if dist.rank() == 0:
         if FLAGS.resume_from:
@@ -178,11 +189,12 @@ def main(FLAGS):
     _ = dist.allreduce(tf.constant(0))
  
     train_data = create_dataset(FLAGS.train_data_dir, batch_size_per_device, 
-                                preprocessing=preprocessing_type, pipe_mode=FLAGS.pipe_mode)
+                                preprocessing=preprocessing_type, pipe_mode=FLAGS.pipe_mode, device=device)
     validation_data = create_dataset(FLAGS.validation_data_dir, batch_size_per_device, 
-                                     preprocessing=preprocessing_type, train=False, pipe_mode=FLAGS.pipe_mode)
+                                     preprocessing=preprocessing_type, train=False, pipe_mode=FLAGS.pipe_mode, device=device)
     
-    trainer = Trainer(model, opt, loss_func, scheduler, logging=logger, fp16=FLAGS.fp16, mixup_alpha=FLAGS.mixup_alpha, model_dir=FLAGS.model_dir)
+    trainer = Trainer(model, opt, loss_func, scheduler, 
+                      logging=logger, fp16=FLAGS.fp16, mixup_alpha=FLAGS.mixup_alpha, model_dir=FLAGS.model_dir)
     
     for epoch in range(FLAGS.num_epochs):
         if dist.rank() == 0:

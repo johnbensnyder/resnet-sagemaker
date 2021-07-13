@@ -2,20 +2,21 @@ import os
 import tensorflow as tf
 from preprocessing import resnet_preprocessing, imagenet_preprocessing, darknet_preprocessing
 from utils.dist_utils import is_sm_dist, is_sm
+from pathlib import Path
 if is_sm_dist():
     import smdistributed.dataparallel.tensorflow as dist
 else:
     import horovod.tensorflow as dist
 
-def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True, pipe_mode=False):
+def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True, pipe_mode=False, device=None):
     if pipe_mode:
         from sagemaker_tensorflow import PipeModeDataset
-        data = PipeModeDataset(channel=data_dir.split('/')[-1], record_format='TFRecord').shard(dist.size(), dist.rank())
+        data = PipeModeDataset(channel=Path(data_dir).stem, record_format='TFRecord').shard(dist.size(), dist.rank())
     elif data_dir.startswith('s3://'):
         from s3fs import S3FileSystem
         fs = S3FileSystem()
         filenames = [os.path.join('s3://', i) for i in fs.ls(data_dir)]
-        data = tf.data.TFRecordDataset(filenames).shard(dist.size(), dist.rank())
+        data = tf.data.TFRecordDataset(filenames).shard(dist.size(), dist.rank()).cache()
     else:
         filenames = [os.path.join(data_dir, i) for i in os.listdir(data_dir)]
         data = tf.data.TFRecordDataset(filenames).shard(dist.size(), dist.rank())
@@ -24,7 +25,14 @@ def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True, pip
     data = data.map(parse_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     # we drop remainder because we want same sized batches - XLA and because of allreduce being used to calculate
     # accuracy - validation accuracy may be slightly different than computing on all of validation data
-    data = data.batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
+    data = data.batch(batch_size, drop_remainder=True) #.prefetch(tf.data.experimental.AUTOTUNE)
+    # prefetch to device is currently slower. Might look into Dali
+    '''if device:
+        prefetch = tf.data.experimental.prefetch_to_device(f'/gpu:{dist.local_rank()}', buffer_size=tf.data.experimental.AUTOTUNE)
+        data = data.apply(prefetch)
+    else:
+        data = data.prefetch(tf.data.experimental.AUTOTUNE)'''
+    data = data.prefetch(tf.data.experimental.AUTOTUNE)
     return data
 
 
