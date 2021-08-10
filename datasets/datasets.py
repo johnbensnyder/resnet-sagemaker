@@ -7,6 +7,38 @@ if is_sm_dist():
     import smdistributed.dataparallel.tensorflow as dist
 else:
     import horovod.tensorflow as dist
+    
+# Various tuning knobs for tf.data performance
+data_options = tf.data.Options()
+
+# information about these optimizations can be found here
+# https://www.tensorflow.org/api_docs/python/tf/data/Options
+# this paper explains some of their implementations and shows when they provide benefit
+# https://arxiv.org/pdf/2101.12127.pdf
+data_options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.FILE
+# slack can reduce some CPU/GPU contention
+data_options.experimental_slack = True
+# turning off intra_op_parallelism by setting to 1 often improves pipeline performance
+data_options.experimental_threading.max_intra_op_parallelism = 1
+data_options.experimental_optimization.apply_default_optimizations = True
+
+# data_options.experimental_optimization.filter_fusion = True
+# data_options.experimental_optimization.map_and_batch_fusion = True
+# data_options.experimental_optimization.map_and_filter_fusion = True
+# data_options.experimental_optimization.map_fusion = True
+# data_options.experimental_optimization.map_parallelization = True
+
+# map_vectorization_options = tf.data.experimental.MapVectorizationOptions()
+# map_vectorization_options.enabled = True
+# map_vectorization_options.use_choose_fastest = True
+
+# data_options.experimental_optimization.map_vectorization = map_vectorization_options
+
+# data_options.experimental_optimization.noop_elimination = True
+# data_options.experimental_optimization.parallel_batch = True
+# data_options.experimental_optimization.shuffle_and_repeat_fusion = True
+
+
 
 def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True, pipe_mode=False, device=None):
     if pipe_mode:
@@ -32,7 +64,7 @@ def create_dataset(data_dir, batch_size, preprocessing='resnet', train=True, pip
         data = data.apply(prefetch)
     else:
         data = data.prefetch(tf.data.experimental.AUTOTUNE)'''
-    data = data.prefetch(tf.data.experimental.AUTOTUNE)
+    data = data.prefetch(tf.data.experimental.AUTOTUNE).with_options(data_options)
     return data
 
 
