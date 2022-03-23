@@ -61,7 +61,7 @@ class ResNet(pl.LightningModule):
     
     def train_dataloader(self):
         dataset = wds.WebDataset(self.train_path).shuffle(1024) \
-                        .decode("pil").to_tuple("jpeg", "cls").map_tuple(train_preproc, lambda x:x)
+                        .decode("pil").to_tuple("jpeg", "cls", "__key__").map_tuple(train_preproc, lambda x:x, lambda x:x)
         
         return torch.utils.data.DataLoader(dataset, 
                                            num_workers=self.dataloader_workers, 
@@ -71,7 +71,7 @@ class ResNet(pl.LightningModule):
     
     def val_dataloader(self):
         dataset = wds.WebDataset(self.val_path).shuffle(1024) \
-                        .decode("pil").to_tuple("jpeg", "cls").map_tuple(val_preproc, lambda x:x)
+                        .decode("pil").to_tuple("jpeg", "cls", "__key__").map_tuple(val_preproc, lambda x:x, lambda x:x)
         return torch.utils.data.DataLoader(dataset, 
                                            num_workers=self.dataloader_workers, 
                                            batch_size=self.batch_size,

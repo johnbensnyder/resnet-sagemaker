@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from setuptools import setup
 
-install_requires = ["webdataset",
+install_requires = ["webdataset==0.1.103",
                     "pytorch-lightning",
                     "lightning-bolts",
                     "torch_tb_profiler"]
