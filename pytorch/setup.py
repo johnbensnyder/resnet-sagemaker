@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from setuptools import setup
+from setuptools import setup, find_packages
 
 install_requires = ["webdataset==0.1.103",
                     "pytorch-lightning",
@@ -12,5 +12,6 @@ setup(
     author="jbsnyder",
     url="https://github.com/johnbensnyder/resnet",
     description="Resnet test",
+    packages=find_packages(exclude=("configs", "tests")),
     install_requires=install_requires,
 )

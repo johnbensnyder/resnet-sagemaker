@@ -1,5 +1,10 @@
 import os
 import json
+from ast import literal_eval
+
+import importlib
+import importlib.util
+import sys
 import torch
 import torchvision as tv
 import numpy as np
@@ -59,3 +64,28 @@ def get_training_world():
     world["master_port"] = "55555" # port is defined by Sagemaker
 
     return world
+
+def is_sm():
+    """Check if we're running inside a sagemaker training job
+    """
+    sm_training_env = os.environ.get('SM_TRAINING_ENV', None)
+    if not isinstance(sm_training_env, dict):
+        return False
+    return True
+
+def is_sm_dist():
+    """Check if environment variables are set for Sagemaker Data Distributed
+    This has not been tested
+    """
+    sm_training_env = os.environ.get('SM_TRAINING_ENV', None)
+    if not isinstance(sm_training_env, dict):
+        return False
+    sm_training_env = literal_eval(sm_training_env)
+    additional_framework_parameters = sm_training_env.get('additional_framework_parameters', None)
+    if not isinstance(additional_framework_parameters, dict):
+        return False
+    return bool(additional_framework_parameters.get('sagemaker_distributed_dataparallel_enabled', False))
+
+def get_herring_world():
+    return {"machine_rank": 0, "number_of_processes": 8, "size": 8}
+>>>>>>> 74270437b7717782c6a93252c058ab9473ea965e
